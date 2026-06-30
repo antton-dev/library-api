@@ -1,0 +1,42 @@
+services:
+  api:
+    build: .
+    container_name: library_api
+    restart: unless-stopped
+    ports:
+      - "8010:8000"
+    environment:
+      DATABASE_URL: mysql+pymysql://${DB_USER}:${DB_PASSWORD}@db:3306/library_db
+      APP_KEY: ${APP_KEY}
+      GOOGLE_BOOKS_API_KEY: ${GOOGLE_BOOKS_API_KEY}
+    depends_on:
+      db:
+        condition: service_healthy
+    networks:          # <--- AJOUTE CE BLOC ICI
+    - default        # Indispensable pour voir le conteneur 'db'
+    - caddy_net
+
+  db:
+    image: mariadb:11
+    container_name: library_db_app
+    restart: unless-stopped
+    environment:
+      MARIADB_DATABASE: library_db
+      MARIADB_USER: ${DB_USER}
+      MARIADB_PASSWORD: ${DB_PASSWORD}
+      MARIADB_ROOT_PASSWORD: ${DB_ROOT_PASSWORD}
+    volumes:
+      - library_db_data:/var/lib/mysql
+    healthcheck:
+      test: ["CMD", "healthcheck.sh", "--connect", "--innodb_initialized"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+
+volumes:
+  library_db_data:
+
+networks:
+  caddy_net:
+    external: true
+    name: caddy_net
