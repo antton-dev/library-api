@@ -120,28 +120,62 @@ async def create_book(
     if existing_book:
         raise HTTPException(status_code=400, detail="Ce livre est déjà dans la base de données")
 
+    title = ""
+    author = ""
+    description = ""
+    cover_url = ""
+
     google_url = "https://www.googleapis.com/books/v1/volumes"
-    params = {"q": f"isbn:{request.isbn}", "key": GOOGLE_API_KEY}
+    params = {
+        "q": f"isbn:{request.isbn}",
+        "key": GOOGLE_API_KEY
+    }
 
     async with httpx.AsyncClient() as client:
         response = await client.get(google_url, params=params)
         data = response.json()
 
-    if "items" not in data:
-        raise HTTPException(status_code=404, detail="Livre introuvable, ajoutez le manuellement")
-    
-    volume_info = data["items"][0].get("volumeInfo", {})
-    title = volume_info.get("title", "")
-    
-    authors = volume_info.get("authors", [])
-    author = authors[0] if authors else ""
-    
-    description = volume_info.get("description")
-    image_links = volume_info.get("imageLinks") or {}
-    cover_url = image_links.get("thumbnail")
+    # GOOGLE BOOKS CALL
+    if "items" in data:
+        volume_info = data["items"][0].get("volumeInfo", {})
+        title = volume_info.get("title", "")
+        
+        authors = volume_info.get("authors", [])
+        author = authors[0] if authors else ""
+        
+        description = volume_info.get("description", "")
+        image_links = volume_info.get("imageLinks") or {}
+        cover_url = image_links.get("thumbnail", "")
 
-    # Fallback si infos manquantes
-    if not description or not cover_url:
+    # 2. ISBN FALLBACK WITH OPENLIBRARY 
+    else:
+        openlib_url = "https://openlibrary.org/api/books"
+        openlib_key = f"ISBN:{request.isbn}"
+        openlib_params = {
+            "bibkeys": openlib_key,
+            "format": "json",
+            "jscmd": "data"
+        }
+
+        async with httpx.AsyncClient() as client: 
+            response = await client.get(openlib_url, params=openlib_params)
+            openlib_data = response.json()
+
+        if openlib_key not in openlib_data:
+            raise HTTPException(status_code=404, detail="Livre introuvable, ajoutez-le manuellement")
+
+        book_data = openlib_data[openlib_key]
+        title = book_data.get("title", "")
+        
+        authors = book_data.get("authors", [])
+        author = authors[0].get("name", "") if authors else ""
+        
+        
+        cover = book_data.get("cover", {})
+        cover_url = cover.get("medium", cover.get("large", ""))
+
+    # SECONDARY FALLBACK
+    if title and author and (not description or not cover_url):
         fallback_params = {
             "q": f'intitle:"{title}"+inauthor:"{author}"',
             "key": GOOGLE_API_KEY
@@ -163,13 +197,17 @@ async def create_book(
                 if description and cover_url:
                     break
 
+
+    if not title:
+        raise HTTPException(status_code=404, detail="Impossible de récupérer le titre du livre.")
+
     new_book = Book(
-        isbn = request.isbn,
-        title = title,
-        author = author,
-        description = description or "",  
-        cover_url = cover_url or "",
-        status = request.status
+        isbn=request.isbn,
+        title=title,
+        author=author,
+        description=description or "",  
+        cover_url=cover_url or "",
+        status=request.status
     )
 
     session.add(new_book)
@@ -177,7 +215,6 @@ async def create_book(
     session.refresh(new_book)
 
     return new_book
-
 
 # READ ROUTES
 @app.get("/books", response_model=List[Book])
