@@ -147,6 +147,23 @@ async def create_book(
         image_links = volume_info.get("imageLinks") or {}
         cover_url = image_links.get("thumbnail", "")
 
+        # ---- FALLBACK COVER WITH OPENLIBRARY ----
+        if not cover_url:
+            openlib_url = "https://openlibrary.org/api/books"
+            openlib_key = f"ISBN:{request.isbn}"
+            openlib_params = {"bibkeys": openlib_key, "format": "json", "jscmd": "data"}
+            
+            try:
+                async with httpx.AsyncClient() as client:
+                    ol_response = await client.get(openlib_url, params=openlib_params)
+                    ol_data = ol_response.json()
+                
+                if openlib_key in ol_data:
+                    cover = ol_data[openlib_key].get("cover", {})
+                    cover_url = cover.get("medium", cover.get("large", ""))
+            except Exception:
+                pass
+
     # 2. ISBN FALLBACK WITH OPENLIBRARY 
     else:
         openlib_url = "https://openlibrary.org/api/books"
