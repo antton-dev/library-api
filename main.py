@@ -1,5 +1,5 @@
 #####
-# THIS API RESPECT THE CRUD SCHEME : 
+# THIS API RESPECT THE CRUD SCHEME :
 # CREATE
 # READ
 # UPDATE
@@ -258,7 +258,6 @@ async def search_books_by_title(
 ) :
     google_params = {
         "q": f"intitle:{query}",
-        "maxResults": str(max_results),
     }
 
     if GOOGLE_API_KEY:
